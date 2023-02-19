@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Switcheroo - The incremental-search task switcher for Windows.
  * http://www.switcheroo.io/
  * Copyright 2009, 2010 James Sulak
@@ -26,18 +26,19 @@ using ManagedWinapi.Hooks;
 
 namespace Switcheroo
 {
-    public delegate void AltTabHookEventHandler(object sender, AltTabHookEventArgs args);
+    public delegate void HotKeyHookEventHandler(object sender, HotKeyHookEventArgs args);
 
-    public class AltTabHookEventArgs : EventArgs
+    public class HotKeyHookEventArgs : EventArgs
     {
         public bool CtrlDown { get; set; }
         public bool ShiftDown { get; set; }
         public bool Handled { get; set; }
     }
 
-    public class AltTabHook : IDisposable
+    public class HotKeyHook : IDisposable
     {
-        public event AltTabHookEventHandler Pressed;
+        public event HotKeyHookEventHandler Pressed;
+        private System.Windows.Forms.Keys KeyCode;
         private const int AltKey = 32;
         private const int CtrlKey = 11;
         private readonly KeyboardKey _shiftKey = new KeyboardKey(Keys.LShiftKey);
@@ -49,11 +50,12 @@ namespace Switcheroo
         // ReSharper disable once PrivateFieldCanBeConvertedToLocalVariable
         private readonly LowLevelKeyboardHook _lowLevelKeyboardHook;
 
-        public AltTabHook()
+        public HotKeyHook(System.Windows.Forms.Keys keyCode)
         {
             _lowLevelKeyboardHook = new LowLevelKeyboardHook();
             _lowLevelKeyboardHook.MessageIntercepted += OnMessageIntercepted;
             _lowLevelKeyboardHook.StartHook();
+            KeyCode = keyCode;
         }
 
         private void OnMessageIntercepted(LowLevelMessage lowLevelMessage, ref bool handled)
@@ -64,7 +66,7 @@ namespace Switcheroo
                 return;
             }
 
-            if (!IsTabKeyDown(keyboardMessage))
+            if (!IsHotKeyDown(keyboardMessage))
             {
                 return;
             }
@@ -87,21 +89,21 @@ namespace Switcheroo
             return (keyboardKey.AsyncState & 32768) != 0;
         }
 
-        private bool IsTabKeyDown(LowLevelKeyboardMessage keyboardMessage)
+        private bool IsHotKeyDown(LowLevelKeyboardMessage keyboardMessage)
         {
-            return keyboardMessage.VirtualKeyCode == (int) Keys.Tab &&
+            return keyboardMessage.VirtualKeyCode == (int)KeyCode &&
                    (keyboardMessage.Message == WM_KEYDOWN || keyboardMessage.Message == WM_SYSKEYDOWN);
         }
 
-        private AltTabHookEventArgs OnPressed(bool shiftDown, bool ctrlDown)
+        private HotKeyHookEventArgs OnPressed(bool shiftDown, bool ctrlDown)
         {
-            var altTabHookEventArgs = new AltTabHookEventArgs { ShiftDown = shiftDown, CtrlDown = ctrlDown };
+            var hotKeyHookEventArgs = new HotKeyHookEventArgs { ShiftDown = shiftDown, CtrlDown = ctrlDown };
             var handler = Pressed;
             if (handler != null)
             {
-                handler(this, altTabHookEventArgs);
+                handler(this, hotKeyHookEventArgs);
             }
-            return altTabHookEventArgs;
+            return hotKeyHookEventArgs;
         }
 
         public void Dispose()

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Switcheroo - The incremental-search task switcher for Windows.
  * http://www.switcheroo.io/
  * Copyright 2009, 2010 James Sulak
@@ -52,6 +52,7 @@ namespace Switcheroo
         private ObservableCollection<AppWindowViewModel> _filteredWindowList;
         private NotifyIcon _notifyIcon;
         private HotKey _hotkey;
+        private HotKeyHook _secondaryHotKeyHook;
 
         public static readonly RoutedUICommand CloseWindowCommand = new RoutedUICommand();
         public static readonly RoutedUICommand SwitchToWindowCommand = new RoutedUICommand();
@@ -63,7 +64,7 @@ namespace Switcheroo
         public static readonly RoutedUICommand ScrollListEndCommand = new RoutedUICommand();
         private OptionsWindow _optionsWindow;
         private AboutWindow _aboutWindow;
-        private AltTabHook _altTabHook;
+        private HotKeyHook _altTabHook;
         private SystemWindow _foregroundWindow;
         private bool _altTabAutoSwitch;
         private bool _sortWinList = false;
@@ -77,6 +78,8 @@ namespace Switcheroo
             SetUpNotifyIcon();
 
             SetUpHotKey();
+
+            SetUpSecondaryHotKey();
 
             SetUpAltTabHook();
 
@@ -237,9 +240,15 @@ namespace Switcheroo
             }
         }
 
+        private void SetUpSecondaryHotKey()
+        {
+            _secondaryHotKeyHook = new HotKeyHook(Keys.Oem3);
+            _secondaryHotKeyHook.Pressed += SecondaryHotkeyPressed;
+        }
+
         private void SetUpAltTabHook()
         {
-            _altTabHook = new AltTabHook();
+            _altTabHook = new HotKeyHook(Keys.Tab);
             _altTabHook.Pressed += AltTabPressed;
         }
 
@@ -397,25 +406,18 @@ namespace Switcheroo
         /// <summary>
         /// Populates the window list with the current running windows.
         /// </summary>
-        private void LoadData(InitialFocus focus)
+        private void LoadData(InitialFocus focus, bool showRelatedWindowsOnly=false)
         {
             if ( tb.IsEnabled ) tb.Clear();
 
             _unfilteredWindowList = new WindowFinder().GetWindows().Select(window => new AppWindowViewModel(window)).ToList();
-
-            var firstWindow = _unfilteredWindowList.FirstOrDefault();
-
-            var foregroundWindowMovedToBottom = false;
             
-            // Move first window to the bottom of the list if it's related to the foreground window
-            if (firstWindow != null && AreWindowsRelated(firstWindow.AppWindow, _foregroundWindow))
+            if (showRelatedWindowsOnly)
             {
-                _unfilteredWindowList.RemoveAt(0);
-                _unfilteredWindowList.Add(firstWindow);
-                foregroundWindowMovedToBottom = true;
+                // filter out all windows that are not foreground
+                _unfilteredWindowList.RemoveAll(item => !AreWindowsRelated(item.AppWindow, _foregroundWindow));
             }
 
-            _filteredWindowList = new ObservableCollection<AppWindowViewModel>(_unfilteredWindowList);
             _windowCloser = new WindowCloser();
 
             for (var i = 0; i < _unfilteredWindowList.Count; i++)
@@ -430,23 +432,12 @@ namespace Switcheroo
                 _unfilteredWindowList = _unfilteredWindowList.OrderBy(x => x.FormattedProcessTitle).ToList();
             }
             
-            var _itemsCountToHighlight = Math.Min(_unfilteredWindowList.Count, 10);
-            for (var i = 0; i < _itemsCountToHighlight; i++)
-            {
-                _unfilteredWindowList[i].FormattedTitle = new XamlHighlighter().Highlight(new[] { new StringPart("" + (i + 1) + " ", true) }) + _unfilteredWindowList[i].FormattedTitle ;
-            }
+            AnnotateFormattedTitles(_unfilteredWindowList);
 
-            if (_sortWinList == true)
-            {
-                lb.DataContext = null;
-                lb.DataContext = _unfilteredWindowList;
-            }
-            else
-            {
-                lb.DataContext = _filteredWindowList;
-            }
+            _filteredWindowList = new ObservableCollection<AppWindowViewModel>(_unfilteredWindowList);
+            lb.DataContext = _filteredWindowList;
 
-            FocusItemInList(focus, foregroundWindowMovedToBottom);
+            FocusItemInList(focus);
 
             tb.Focus();
             CenterWindow();
@@ -458,7 +449,17 @@ namespace Switcheroo
             return window1.HWnd == window2.HWnd || window1.Process.Id == window2.Process.Id;
         }
 
-        private void FocusItemInList(InitialFocus focus, bool foregroundWindowMovedToBottom)
+        private void AnnotateFormattedTitles(List<AppWindowViewModel> windowList)
+        {
+            var _itemsCountToHighlight = Math.Min(windowList.Count, 10);
+            for (var i = 0; i < _itemsCountToHighlight; i++)
+            {
+                windowList[i].FormattedTitle = new XamlHighlighter().Highlight(new[] { new StringPart("" + (i + 1) + " ", true) }) + windowList[i].FormattedTitle;
+            }
+        }
+
+
+        private void FocusItemInList(InitialFocus focus, bool foregroundWindowMovedToBottom=false)
         {
             if (focus == InitialFocus.PreviousItem)
             {
@@ -472,7 +473,7 @@ namespace Switcheroo
             }
             else
             {
-                lb.SelectedIndex = 0;
+                lb.SelectedIndex = lb.Items.Count > 1 ? 1 : 0;
             }
         }
 
@@ -632,9 +633,59 @@ namespace Switcheroo
             }
         }
 
-        private void AltTabPressed(object sender, AltTabHookEventArgs e)
+        private void SecondaryHotkeyPressed(object sender, HotKeyHookEventArgs e)
         {
-            if (!Settings.Default.AltTabHook)
+            _foregroundWindow = SystemWindow.ForegroundWindow;
+
+            if (_foregroundWindow.ClassName == "MultitaskingViewFrame")
+            {
+                // If Windows' task switcher is on the screen then don't do anything
+                return;
+            }
+
+            e.Handled = true;
+
+            if (Visibility != Visibility.Visible)
+            {
+                tb.IsEnabled = true;
+
+                ActivateAndFocusMainWindow();
+
+                Keyboard.Focus(tb);
+                if (e.ShiftDown)
+                {
+                    LoadData(InitialFocus.PreviousItem, true);
+                }
+                else
+                {
+                    LoadData(InitialFocus.NextItem, true);
+                }
+
+                if (Settings.Default.AutoSwitch && !e.CtrlDown)
+                {
+                    _altTabAutoSwitch = true;
+                    tb.IsEnabled = false;
+                    tb.Text = "Press Alt + Q to search";
+                }
+
+                Opacity = 1;
+            }
+            else
+            {
+                if (e.ShiftDown)
+                {
+                    PreviousItem();
+                }
+                else
+                {
+                    NextItem();
+                }
+            }
+        }
+
+        private void AltTabPressed(object sender, HotKeyHookEventArgs e)
+        {
+            if (false && !Settings.Default.AltTabHook)
             {
                 // Ignore Alt+Tab presses if the hook is not activated by the user
                 return;
