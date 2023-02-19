@@ -399,6 +399,8 @@ namespace Switcheroo
         /// </summary>
         private void LoadData(InitialFocus focus)
         {
+            if ( tb.IsEnabled ) tb.Clear();
+
             _unfilteredWindowList = new WindowFinder().GetWindows().Select(window => new AppWindowViewModel(window)).ToList();
 
             var firstWindow = _unfilteredWindowList.FirstOrDefault();
@@ -446,7 +448,6 @@ namespace Switcheroo
 
             FocusItemInList(focus, foregroundWindowMovedToBottom);
 
-            if ( tb.IsEnabled ) tb.Clear();
             tb.Focus();
             CenterWindow();
             ScrollSelectedItemIntoView();
