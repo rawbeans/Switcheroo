@@ -33,6 +33,7 @@ Action                         | Shortcut        | Remarks
 ------------------------------ | --------------- | ----------
 Activate Switcheroo            | `Alt + Space`   | This shortcut can be customized in _Options_
 Activate Switcheroo            | `Alt + Tab`     | Only works if enabled under _Options_
+Activate secondary switcher    | `Alt + `\`      | Switch between windows of foreground application
 _When Switcheroo is open_      |                 |
 Switch to selected window      | `Enter`,`Alt`   |
 Select next/previous           | `Tab`/`Shift + Tab`, `Alt + J`/`Alt + K` | 
